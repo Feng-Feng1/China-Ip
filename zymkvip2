@@ -1,154 +1,125 @@
-#!name=知音漫客 一体化解锁+去广告
-#!desc=单文件模块：知音漫客 VIP/章节 解锁 + 常见广告屏蔽（增强匹配）
-#!author=夜日 & GPT
-#!version=1.2
-#!update=2025-10-31
-
-[MITM]
-hostname = *.kaimanhua.com, *.zymk.cn, *.kaimanhua.cn, *.kaimanhuaapp.com
-
-[URL Rewrite]
-# 屏蔽可能的广告请求（兼容多域）
-^https?:\/\/(?:api|api-cdn|apigate|cdn|ad|ads|adsvc)\.(?:kaimanhua|zymk|kaimanhuaapp|zymkapp)\.(?:com|cn)\/.*(?:advert|adlist|ad|advertise|ads).* - reject
-
-[Script]
-# 一体化脚本：匹配多种路径（getuserinfo / user/v#/info / paychapters / chapterAuth / buy 等）
-http-response ^https?:\/\/(?:[\w-]+\.)?(?:kaimanhua|zymk|kaimanhuaapp|zymkapp|kaimanhua)\.(?:com|cn)\/.*(?:getuserinfo|user\/v\d+\/info|user\/info|paychapters|pay_chapters|payChapter|chapterAuth|chapter\/auth|chapter\/buy|chapter\/purchase|buyChapter|buy\/chapter|purchase).* requires-body=true, timeout=12, script-type=javascript, tag=Zymk_Unlock, script-content="""
-'use strict';
-
 /**
- * Zymk 一体化解锁脚本（内嵌）
- * 目标：注入 VIP 信息、标记章节为已解锁、屏蔽/返回空广告结构
- * 兼容多种返回结构（data/result/payload/body）
+ * 稳健版：解锁知音漫客付费章节
+ * 兼容 Surge / Loon / QuantumultX 的 http-response / script-response-body
+ *
+ * 要点：
+ * - 对非 JSON、安全场景做判定并回退原始 body，避免卡死
+ * - 确保任何分支都调用 $done()
+ * - 对 obj.data 做存在性检测后再赋值
  */
 
-function safeParse(s) {
-  try { return JSON.parse(s); } catch (e) { return null; }
-}
-function safeStringify(o, fb) {
-  try { return JSON.stringify(o); } catch (e) { return typeof fb === 'string' ? fb : ''; }
-}
-function ensureContainer(obj) {
-  if (!obj || typeof obj !== 'object') return null;
-  if ('data' in obj && typeof obj.data === 'object') return obj.data;
-  if ('result' in obj && typeof obj.result === 'object') return obj.result;
-  if ('payload' in obj && typeof obj.payload === 'object') return obj.payload;
-  if ('body' in obj && typeof obj.body === 'object') return obj.body;
-  // fallback: create data
-  obj.data = obj.data || {};
-  return obj.data;
-}
+(function () {
+  // 保底变量（不同平台兼容）
+  const reqUrl = ($request && $request.url) ? $request.url : "";
+  const respBody = ($response && typeof $response.body === "string") ? $response.body : "";
 
-const url = ($request && $request.url) ? $request.url : '';
-const rawBody = ($response && typeof $response.body === 'string') ? $response.body : '';
-
-if (!url) $done({});
-
-// 如果是广告相关返回（被误匹配）直接返回空结构，避免展示广告或崩溃
-if (/advertise|advert|adsvc|adlist|ads/i.test(url)) {
-  const empty = { status: 0, code: 0, data: [] };
-  $done({ body: safeStringify(empty, '{"status":0,"code":0,"data":[]}') });
-}
-
-try {
-  const parsed = safeParse(rawBody);
-  if (!parsed) {
-    // 非 JSON 响应：不处理，直接返回原始，避免误伤
-    $done({ body: rawBody });
+  // 如果没有响应 body 或 没有 URL，直接回传原始（安全）
+  if (!reqUrl || !respBody) {
+    $done({ body: respBody || "" });
+    return;
   }
 
-  let obj = parsed;
-
-  // 1) 用户信息解锁（getuserinfo / user info）
-  if (/getuserinfo|user\/v\d+\/info|user\/info|\/user\/detail/i.test(url)) {
-    let data = ensureContainer(obj);
-    if (!data) { $done({ body: rawBody }); }
-
-    // 注入常见 VIP 字段（兼容多字段名）
-    data.isvip = 1;
-    data.vip = 1;
-    data.vipdays = data.vipdays || 9999;
-    data.vipdate = data.vipdate || 1;
-    data.Uviptime = data.Uviptime || data.vipExpire || 9999999999999;
-    data.end_time = data.end_time || data.vip_end || "2099-12-31";
-    data.Uname = data.Uname || data.username || data.nickname || "VIP用户";
-    data.nickname = data.nickname || data.Uname;
-    data.headpic = data.headpic || data.avatar || "https://zdimg.lifeweek.com.cn/app/20240614/17183119665002415.jpg";
-    data.Cgold = data.Cgold || data.coins || 999999;
-    data.coins = data.coins || data.Cgold || 999999;
-    data.Ulevel = data.Ulevel || data.level || 20;
-
-    // 写回（若容器为 result/payload/body，写回相应字段；默认写到 data）
-    if ('data' in obj) obj.data = data;
-    else if ('result' in obj) obj.result = data;
-    else if ('payload' in obj) obj.payload = data;
-    else obj.data = data;
-
-    $done({ body: safeStringify(obj, rawBody) });
+  // 简单检查 Content-Type（若可用），避免解析图片/二进制/HTML
+  // 在某环境中 $response.headers 可能不可用，故用 try 包裹
+  try {
+    const headers = $response && $response.headers ? $response.headers : null;
+    if (headers && headers["Content-Type"]) {
+      const ct = headers["Content-Type"].toLowerCase();
+      if (!ct.includes("application/json") && !ct.includes("text/json")) {
+        // 非 JSON 类型，直接返回原始 body
+        $done({ body: respBody });
+        return;
+      }
+    }
+  } catch (e) {
+    // header 检查失败也不阻断，继续尝试解析
   }
 
-  // 2) 章节/付费解锁（paychapters / chapterAuth / buy）
-  if (/paychapters|pay_chapters|payChapter|chapterAuth|chapter\/auth|chapter\/buy|chapter\/purchase|buyChapter|purchase/i.test(url)) {
-    // 标准化状态码
-    if (typeof obj === 'object') {
-      if ('status' in obj) obj.status = 0;
-      if ('code' in obj) obj.code = 0;
-      if ('errcode' in obj) obj.errcode = 0;
-      if ('errno' in obj) obj.errno = 0;
-      if ('message' in obj) obj.message = obj.message || 'ok';
+  // 解析并处理（安全 try/catch）
+  try {
+    let obj = JSON.parse(respBody);
+
+    // 确保是对象
+    if (obj === null || typeof obj !== "object") {
+      $done({ body: respBody });
+      return;
     }
 
-    // 处理 data 里的章节列表或单章节结构
-    let data = ensureContainer(obj) || {};
-    // 若有章节数组字段名常见: chapters / list / items
-    if (Array.isArray(data.chapters)) {
-      data.chapters = data.chapters.map(ch => {
-        if (ch && typeof ch === 'object') {
-          ch.is_locked = 0;
-          ch.lock = 0;
-          ch.price = 0;
-          ch.is_buy = 1;
-        }
-        return ch;
-      });
-    } else if (Array.isArray(data.list)) {
-      data.list = data.list.map(ch => {
-        if (ch && typeof ch === 'object') {
-          ch.is_locked = 0;
-          ch.price = 0;
-          ch.is_buy = 1;
-        }
-        return ch;
-      });
-    } else if (Array.isArray(data.items)) {
-      data.items = data.items.map(ch => {
-        if (ch && typeof ch === 'object') {
-          ch.is_locked = 0;
-          ch.price = 0;
-          ch.is_buy = 1;
-        }
-        return ch;
-      });
-    } else {
-      // 非数组时直接设置常见字段
-      data.is_locked = 0;
-      data.price = 0;
-      data.is_buy = 1;
+    // --- 处理用户信息接口 ---
+    // 仅在 URL 包含 getuserinfo 或 类似关键字时注入 VIP
+    if (/getuserinfo|user\/v\d+\/info|user\/info/i.test(reqUrl)) {
+      // 确保 data 存在
+      if (!obj.data || typeof obj.data !== "object") obj.data = {};
+
+      // 注入/覆盖安全字段
+      obj.data.isvip = 1;
+      obj.data.vip = 1;
+      obj.data.vipdays = obj.data.vipdays || 9999;
+      obj.data.vipdate = obj.data.vipdate || 1;
+      obj.data.Uviptime = obj.data.Uviptime || obj.data.vipExpire || 32503680000000; // year 3000-ish
+      obj.data.end_time = obj.data.end_time || obj.data.vip_end || "2099-12-31";
+      obj.data.Uname = obj.data.Uname || obj.data.username || obj.data.nickname || "VIP用户";
+      obj.data.nickname = obj.data.nickname || obj.data.Uname;
+      obj.data.headpic = obj.data.headpic || obj.data.avatar || "https://zdimg.lifeweek.com.cn/app/20240614/17183119665002415.jpg";
+      obj.data.Cgold = obj.data.Cgold || obj.data.coins || 999999;
+      obj.data.coins = obj.data.coins || obj.data.Cgold || 999999;
+      obj.data.Ulevel = obj.data.Ulevel || obj.data.level || 20;
+
+      $done({ body: JSON.stringify(obj) });
+      return;
     }
 
-    if ('data' in obj) obj.data = Object.assign(obj.data || {}, data);
-    else if ('result' in obj) obj.result = Object.assign(obj.result || {}, data);
-    else obj.data = data;
+    // --- 处理付费章节接口 ---
+    if (/paychapters|chapterAuth|chapter\/auth|buyChapter|purchase|userpurchased/i.test(reqUrl)) {
+      // 标准化表示成功/无需付费的字段
+      if (typeof obj === "object") {
+        if ("status" in obj) obj.status = 0;
+        if ("code" in obj) obj.code = 0;
+        if ("errcode" in obj) obj.errcode = 0;
+        if ("errno" in obj) obj.errno = 0;
+        if ("message" in obj) obj.message = obj.message || "ok";
+      }
 
-    $done({ body: safeStringify(obj, rawBody) });
+      // 处理 data 容器
+      if (!obj.data || typeof obj.data !== "object") obj.data = {};
+
+      // 如果存在章节数组，逐项解锁
+      const chFields = ["chapters", "list", "items"];
+      let found = false;
+      for (const f of chFields) {
+        if (Array.isArray(obj.data[f])) {
+          obj.data[f] = obj.data[f].map(ch => {
+            if (ch && typeof ch === "object") {
+              ch.is_locked = 0;
+              ch.lock = 0;
+              ch.price = 0;
+              ch.is_buy = 1;
+            }
+            return ch;
+          });
+          found = true;
+        }
+      }
+      if (!found) {
+        // 没有数组则直接写常见字段
+        obj.data.is_locked = 0;
+        obj.data.price = 0;
+        obj.data.is_buy = 1;
+      }
+
+      $done({ body: JSON.stringify(obj) });
+      return;
+    }
+
+    // 若不匹配以上接口，则原样返回（避免误伤）
+    $done({ body: respBody });
+    return;
+
+  } catch (err) {
+    // 出现解析或运行异常，记录并回退原始响应，**务必调用 $done**！
+    // 在某些平台 console.log 可见，某些平台不可见但仍尝试打印
+    try { console.log("[Zymk fix] error:", err && err.message ? err.message : err); } catch (e) {}
+    $done({ body: respBody });
+    return;
   }
-
-  // 其他匹配但未特别处理：返回原始
-  $done({ body: rawBody });
-
-} catch (err) {
-  // 出错则回退原始响应，避免影响 APP
-  console.log('[Zymk_Unlock] error:', err && err.message ? err.message : err);
-  $done({ body: rawBody });
-}
-"""
+})();
