@@ -1,14 +1,8 @@
 #!name=知音漫客VIP解锁
 #!desc=解锁会员与付费章节
 #!update=2025-10-27
-
 [Script]
-http-response ^https?:\/\/apigate\.kaimanhua\.com\/zymk.+getuserinfo requires-body=true, script-path=https://raw.githubusercontent.com/Feng-Feng1/surge/refs/heads/main/zymkvip2.js, tag=知音漫客-会员解锁, timeout=10
-
-http-response ^https?:\/\/apigate\.kaimanhua\.com\/zymk.+paychapters requires-body=true, script-path=https://raw.githubusercontent.com/Feng-Feng1/surge/refs/heads/main/zymkvip2.js, tag=知音漫客-章节解锁, timeout=10
-
-http-response ^https?://api-cdn\.kaimanhua\.com/advertiseapi/app/advertise/getappadvertise reject
-
+http-response ^https:\/\/apigate\.kaimanhua\.com\/(zymk-getuserinfo-api\/v1\/getuserinfo|zymk-userpurchased-api\/v1\/userpurchased\/paychapters)\/ requires-body=1,max-size=0,script-path=https://raw.githubusercontent.com/Feng-Feng1/surge/refs/heads/main/zymkvip2.js
 [MITM]
 hostname = apigate.kaimanhua.com, api-cdn.kaimanhua.com
 
