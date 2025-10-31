@@ -1,16 +1,12 @@
 #!name=知音漫客VIP解锁
-#!desc=解锁会员与付费章节，兼容 Surge，移除混淆与不兼容语法
-#!author=改写自 @WeiGiegie
+#!desc=解锁会员与付费章节
 #!update=2025-10-27
 
 [Script]
-# 解锁会员信息接口
 http-response ^https?:\/\/apigate\.kaimanhua\.com\/zymk.+getuserinfo requires-body=true, script-path=https://raw.githubusercontent.com/Feng-Feng1/surge/refs/heads/main/zymkvip2, tag=知音漫客-会员解锁, timeout=10
 
-# 解锁付费章节接口
 http-response ^https?:\/\/apigate\.kaimanhua\.com\/zymk.+paychapters requires-body=true, script-path=https://raw.githubusercontent.com/Feng-Feng1/surge/refs/heads/main/zymkvip2, tag=知音漫客-章节解锁, timeout=10
 
-# 屏蔽广告接口
 http-response ^https?://api-cdn\.kaimanhua\.com/advertiseapi/app/advertise/getappadvertise reject
 
 [MITM]
@@ -21,7 +17,6 @@ let body = $response.body;
 
 if (!body) $done({});
 
-// 解锁会员信息
 if (url.includes("/getuserinfo")) {
   let obj = JSON.parse(body);
   if (obj && obj.data) {
@@ -39,15 +34,13 @@ if (url.includes("/getuserinfo")) {
   $done({ body });
 }
 
-// 解锁付费章节
 else if (url.includes("/paychapters")) {
   let obj = JSON.parse(body);
-  obj.status = 0; // 表示无需付费
+  obj.status = 0;
   body = JSON.stringify(obj);
   $done({ body });
 }
 
-// 默认返回
 else {
   $done({});
 }
