@@ -1,4 +1,6 @@
 #!name=知音漫客VIP解锁
+#!desc=解锁会员与付费章节，兼容 Surge，移除混淆与不兼容语法
+#!author=改写自 @WeiGiegie
 #!update=2025-10-27
 
 [Script]
@@ -13,3 +15,4 @@ http-response ^https?://api-cdn\.kaimanhua\.com/advertiseapi/app/advertise/getap
 
 [MITM]
 hostname = apigate.kaimanhua.com, api-cdn.kaimanhua.com
+
