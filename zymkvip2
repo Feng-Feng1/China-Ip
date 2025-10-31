@@ -1,0 +1,93 @@
+#!name=知音漫客VIP解锁
+#!desc=知音漫客 解锁会员+付费，一体化模块（无需外部脚本）
+#!author=夜日 & GPT
+#!version=1.0
+#!update=2025-10-31
+
+[Script]
+http-response ^https?:\/\/apigate\.kaimanhua\.com\/zymk.*(getuserinfo|paychapters).*$ requires-body=true, script-type=javascript, timeout=10, tag=知音漫客解锁
+
+script-content=
+"""
+'use strict';
+
+function safeParse(body) {
+  try { return JSON.parse(body); } catch (e) { return null; }
+}
+
+function safeStringify(obj, fallback) {
+  try { return JSON.stringify(obj); } catch (e) { return typeof fallback === 'string' ? fallback : ''; }
+}
+
+let url = ($request && $request.url) ? $request.url : '';
+let body = ($response && typeof $response.body === 'string') ? $response.body : '';
+
+if (!url) $done({});
+
+try {
+  // 解锁用户信息
+  if (url.includes("getuserinfo")) {
+    let obj = safeParse(body);
+    if (!obj) $done({ body });
+
+    let data = obj.data || obj.result || {};
+    if (typeof data !== 'object') data = {};
+
+    Object.assign(data, {
+      Uname: data.Uname || "VIP用户",
+      headpic: data.headpic || "https://zdimg.lifeweek.com.cn/app/20240614/17183119665002415.jpg",
+      isvip: 1,
+      vipdate: 1,
+      vipdays: 9999,
+      Uviptime: 9999999999999,
+      Cgold: 999999,
+      coins: 999999,
+      Ulevel: 20
+    });
+
+    if (obj.data) obj.data = data;
+    else if (obj.result) obj.result = data;
+    else obj = { data };
+
+    $done({ body: safeStringify(obj, body) });
+  }
+
+  // 解锁章节接口
+  else if (url.includes("paychapters")) {
+    let obj = safeParse(body);
+    if (!obj) $done({ body });
+
+    obj.status = 0;
+    obj.code = 0;
+    if (obj.data) {
+      if (typeof obj.data === 'object') {
+        obj.data.is_locked = 0;
+        obj.data.price = 0;
+        if (Array.isArray(obj.data.chapters)) {
+          obj.data.chapters = obj.data.chapters.map(c => {
+            if (typeof c === 'object') {
+              c.is_locked = 0;
+              c.price = 0;
+            }
+            return c;
+          });
+        }
+      }
+    }
+    $done({ body: safeStringify(obj, body) });
+  }
+
+  else {
+    $done({ body });
+  }
+
+} catch (err) {
+  $done({ body });
+}
+"""
+
+# 屏蔽广告接口
+http-response ^https?://api-cdn\.kaimanhua\.com/advertiseapi/app/advertise/getappadvertise reject
+
+[MITM]
+hostname = apigate.kaimanhua.com, api-cdn.kaimanhua.com
