@@ -5,57 +5,14 @@
 
 [Script]
 # 解锁会员信息接口
-http-response ^https?:\/\/apigate\.kaimanhua\.com\/zymk.+getuserinfo requires-body=true, script-path=https://raw.githubusercontent.com/Feng-Feng1/surge/refs/heads/main/zymkvip2, tag=知音漫客-会员解锁, timeout=10
+http-response ^https?:\/\/apigate\.kaimanhua\.com\/zymk.+getuserinfo requires-body=true, script-path=https://raw.githubusercontent.com/Feng-Feng1/surge/refs/heads/main/zymk_surge.js, tag=知音漫客-会员解锁, timeout=10
 
 # 解锁付费章节接口
-http-response ^https?:\/\/apigate\.kaimanhua\.com\/zymk.+paychapters requires-body=true, script-path=https://raw.githubusercontent.com/Feng-Feng1/surge/refs/heads/main/zymkvip2, tag=知音漫客-章节解锁, timeout=10
+http-response ^https?:\/\/apigate\.kaimanhua\.com\/zymk.+paychapters requires-body=true, script-path=https://raw.githubusercontent.com/Feng-Feng1/surge/refs/heads/main/zymk_surge.js, tag=知音漫客-章节解锁, timeout=10
 
 # 屏蔽广告接口
 http-response ^https?://api-cdn\.kaimanhua\.com/advertiseapi/app/advertise/getappadvertise reject
 
 [MITM]
 hostname = apigate.kaimanhua.com, api-cdn.kaimanhua.com
-/*
- * 知音漫客会员+章节解锁脚本
- * 作者: 夜日 & GPT
- * 更新: 2025-10-31
- */
 
-const url = $request.url;
-const body = $response.body || "{}";
-let obj = {};
-try { obj = JSON.parse(body); } catch (e) {}
-
-if (/getuserinfo|user\/v\d+\/info/i.test(url)) {
-  if (!obj.data) obj.data = {};
-  Object.assign(obj.data, {
-    isvip: 1,
-    vipdays: 9999,
-    Uviptime: 32493812812000,
-    vipdate: 1,
-    Uname: "VIP用户",
-    nickname: "VIP用户",
-    headpic: "https://zdimg.lifeweek.com.cn/app/20240614/17183119665002415.jpg",
-    Cgold: 999999,
-    coins: 999999,
-    Ulevel: 20,
-  });
-}
-
-if (/paychapters|chapterAuth|buyChapter/i.test(url)) {
-  if ("status" in obj) obj.status = 0;
-  if ("code" in obj) obj.code = 0;
-  if ("errno" in obj) obj.errno = 0;
-  if ("message" in obj) obj.message = "ok";
-  if (obj.data && typeof obj.data === "object") {
-    if (Array.isArray(obj.data.chapters)) {
-      obj.data.chapters = obj.data.chapters.map(c => ({
-        ...c, is_locked: 0, price: 0, is_buy: 1
-      }));
-    } else {
-      Object.assign(obj.data, { is_locked: 0, price: 0, is_buy: 1 });
-    }
-  }
-}
-
-$done({ body: JSON.stringify(obj) });
